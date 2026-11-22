@@ -268,7 +268,7 @@ def build_decision(state: dict, ctx: NodeContext) -> dict:
 def _has_no_access_grant(event: dict) -> bool:
     """Return True only when the event explicitly confirms no access grant."""
     metadata = event.get("metadata") or {}
-    return metadata.get("access_granted") is False
+    return metadata.get("access_granted") is not True
 
 def _extract_json(text: str) -> str:
     start = text.find("{")
