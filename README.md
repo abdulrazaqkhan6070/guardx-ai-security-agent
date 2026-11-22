@@ -299,3 +299,11 @@ MIT — see [LICENSE](LICENSE).
 ---
 
 Built by Kifayat Irfan, Abdur Razzaq, and Abdur Rehman.
+
+
+## Maintenance Notes
+
+Original project by the GuardX team (see credits above). Now maintained and improved by Abdul Razaq Khan.
+
+- After restarting Docker, rebuild the policy index: `curl -X POST http://localhost:8000/api/v1/policies/reindex`
+- Detection sensitivity is set by `YOLO_CONFIDENCE` in `.env` (default 0.5, lower values such as 0.3 help in dim lighting).
