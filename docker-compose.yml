@@ -1,6 +1,7 @@
+
 # GuardX — service orchestration (Phase 1)
 # Default: postgres + chromadb + backend + frontend.
-# n8n is profile-gated: `docker compose --profile automation up`
+# n8n is profile-gated: docker compose --profile automation up
 
 services:
   postgres:
@@ -19,11 +20,10 @@ services:
 
   chromadb:
     image: chromadb/chroma:latest
-    command: ["--path", "/data"]
     volumes:
       - chroma-data:/data
     ports:
-      - "8001:8000" # host mapping avoids clashing with backend :8000
+      - "8001:8000"
 
   backend:
     build: ./backend
@@ -31,19 +31,23 @@ services:
       APP_ENV: ${APP_ENV:-dev}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-guardx}:${POSTGRES_PASSWORD:-change_me_in_production}@postgres:5432/${POSTGRES_DB:-guardx}
+      LLM_PROVIDER: ollama
+      LLM_BASE_URL: http://host.docker.internal:11434
       CHROMA_HOST: chromadb
       CHROMA_PORT: 8000
       FRONTEND_URL: http://localhost:3000
-      # Phase 9: n8n automation — optional, disabled by default.
-      # Enable with: N8N_ENABLED=true N8N_WEBHOOK_URL=http://n8n:5678/webhook/guardx-incident
       N8N_ENABLED: ${N8N_ENABLED:-false}
       N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL:-}
       N8N_WEBHOOK_SECRET: ${N8N_WEBHOOK_SECRET:-}
       N8N_WEBHOOK_TIMEOUT_SECONDS: ${N8N_WEBHOOK_TIMEOUT_SECONDS:-5}
+      YOLO_CONFIDENCE: ${YOLO_CONFIDENCE:-0.5}
     ports:
       - "8000:8000"
     volumes:
       - ./assets:/app/assets
+      - ./backend/assets:/app/backend_assets:ro
+      - ./demo:/app/demo:ro
+      - ./policies:/policies:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -62,7 +66,7 @@ services:
 
   n8n:
     image: n8nio/n8n
-    profiles: ["automation"] # NOT started by default
+    profiles: ["automation"]
     ports:
       - "5678:5678"
     volumes:

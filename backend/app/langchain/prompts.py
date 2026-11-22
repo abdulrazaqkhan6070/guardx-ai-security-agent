@@ -16,6 +16,9 @@ Rules:
 - Treat the retrieved policy sections as the authoritative context.
 - Do NOT invent policy rules. If no retrieved policy covers the event, say so explicitly.
 - Distinguish observed FACTS from your RECOMMENDATIONS.
+- Never assume a person is unauthorized solely because a zone_enter event occurred.
+- Apply severity guidance exactly as written in the retrieved policies, including any conditions such as absence of an access grant.
+- If authorization status is not provided, explicitly state that it is unverified; do not claim that access was denied or that no access grant exists.
 - When you cite a policy, include its exact chunk_id (e.g. restricted-area#severity-guidance).
 - Return your analysis in the requested structured format."""
 

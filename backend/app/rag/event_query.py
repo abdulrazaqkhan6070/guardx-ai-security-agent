@@ -17,7 +17,7 @@ def zone_event_to_query(event: ZoneEvent) -> str:
         else "exited the restricted zone"
     )
     zone = event.zone_name.replace("-", " ").replace("_", " ")
-    parts = [f"Unauthorized person {action} '{zone}'."]
+    parts = [f"Person detected: {action} '{zone}'."]
     dwell = (event.metadata or {}).get("dwell_elapsed")
     if dwell:
         parts.append(f"Person remained inside for {dwell} seconds.")

@@ -1,7 +1,8 @@
+
 """SenseNova provider tests — every HTTP interaction is mocked.
 
 Zero real API calls: all SenseNova traffic goes through
-``httpx.MockTransport``. The real key is never needed here.
+httpx.MockTransport. The real key is never needed here.
 """
 import json
 import uuid
@@ -47,8 +48,11 @@ def stub_embed(texts):
 
 def make_lc(tmp_path, collection):
     rag = PolicyRAGService(
-        policies_dir=POLICIES_DIR, persist_dir=tmp_path / "chroma",
-        collection=collection, model_name="stub", embed_fn=stub_embed,
+        policies_dir=POLICIES_DIR,
+        persist_dir=tmp_path / "chroma",
+        collection=collection,
+        model_name="stub",
+        embed_fn=stub_embed,
     )
     rag.reindex()
     return LangChainService(rag_service=rag)
@@ -56,10 +60,17 @@ def make_lc(tmp_path, collection):
 
 def make_event():
     return ZoneEvent(
-        event_id=uuid.uuid4(), camera_id=uuid.uuid4(), zone_id=uuid.uuid4(),
-        zone_name="server-room", tracking_id=2, event_type="zone_enter",
-        timestamp=1700000000.0, confidence=0.87,
-        bounding_box=[0.4, 0.5, 0.6, 0.9], point=[0.5, 0.9], metadata={},
+        event_id=uuid.uuid4(),
+        camera_id=uuid.uuid4(),
+        zone_id=uuid.uuid4(),
+        zone_name="server-room",
+        tracking_id=2,
+        event_type="zone_enter",
+        timestamp=1700000000.0,
+        confidence=0.87,
+        bounding_box=[0.4, 0.5, 0.6, 0.9],
+        point=[0.5, 0.9],
+        metadata={},
     )
 
 
@@ -68,8 +79,10 @@ ANALYSIS = {
     "severity": "HIGH",
     "recommended_action": "Dispatch security to verify authorization.",
     "cited_policy_chunk_ids": [],
-    "reasoning": "FACT: a person entered a restricted zone. "
-                 "RECOMMENDATION: verify authorization per policy.",
+    "reasoning": (
+        "FACT: a person entered a restricted zone. "
+        "RECOMMENDATION: verify authorization per policy."
+    ),
     "confidence": 0.9,
 }
 
@@ -80,8 +93,10 @@ def success_body(content=None):
         "model": DEFAULT_MODEL,
         "choices": [{
             "index": 0,
-            "message": {"role": "assistant",
-                        "content": json.dumps(content or ANALYSIS)},
+            "message": {
+                "role": "assistant",
+                "content": json.dumps(content or ANALYSIS),
+            },
             "finish_reason": "stop",
         }],
         "usage": {"prompt_tokens": 10, "completion_tokens": 20},
@@ -91,7 +106,11 @@ def success_body(content=None):
 def mock_client(handler, **model_kwargs):
     transport = httpx.MockTransport(handler)
     client = httpx.Client(transport=transport)
-    kwargs = {"api_key": "test-key", "http_client": client, "retries": 0}
+    kwargs = {
+        "api_key": "test-key",
+        "http_client": client,
+        "retries": 0,
+    }
     kwargs.update(model_kwargs)
     return SenseNovaChatModel(**kwargs)
 
@@ -112,20 +131,20 @@ def _reset_llm_cache():
 def sensenova_env(monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "sensenova")
     monkeypatch.setenv("SENSENOVA_API_KEY", "test-key-env")
+    monkeypatch.delenv("LLM_BASE_URL", raising=False)
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
-
-
 # -- configuration -------------------------------------------------------
 
 
 def test_sensenova_settings_defaults(monkeypatch):
     from app.core.config import Settings
 
-    # Isolate from the developer's real .env (which holds a live API key):
-    # defaults must be verifiable without ambient secrets.
+    # Isolate defaults from environment variables and the developer's .env.
     for var in (
+        "LLM_PROVIDER",
+        "LLM_BASE_URL",
         "SENSENOVA_API_KEY",
         "SENSENOVA_BASE_URL",
         "SENSENOVA_MODEL",
@@ -133,7 +152,9 @@ def test_sensenova_settings_defaults(monkeypatch):
         "SENSENOVA_RETRIES",
     ):
         monkeypatch.delenv(var, raising=False)
+
     s = Settings(_env_file=None)
+
     assert s.sensenova_api_key == ""
     assert s.sensenova_model == DEFAULT_MODEL
     assert s.sensenova_base_url == DEFAULT_BASE_URL
@@ -147,14 +168,16 @@ def test_get_llm_config_sensenova(sensenova_env):
     assert cfg.model == DEFAULT_MODEL
     assert cfg.base_url == DEFAULT_BASE_URL
     assert cfg.api_key == "test-key-env"
-    # repr must never carry the key
     assert "test-key-env" not in repr(cfg)
 
 
 def test_is_available_requires_key():
-    assert is_available(LLMConfig(provider="sensenova", api_key="")) is False
     assert is_available(
-        LLMConfig(provider="sensenova", api_key="k")) is True
+        LLMConfig(provider="sensenova", api_key="")
+    ) is False
+    assert is_available(
+        LLMConfig(provider="sensenova", api_key="k")
+    ) is True
 
 
 def test_get_llm_raises_without_key():
@@ -174,7 +197,6 @@ def test_get_llm_builds_sensenova_model_with_key():
     model = get_llm(cfg)
     assert isinstance(model, SenseNovaChatModel)
     assert model.model_name == cfg.model
-    # second call returns the cached instance (no rebuild)
     assert get_llm(cfg) is model
 
 
@@ -192,14 +214,17 @@ def test_request_construction():
 
     model = mock_client(handler)
     out = model.invoke("hello")
-    assert str(out.content)  # parsed content returned
+
+    assert str(out.content)
     assert seen["url"] == DEFAULT_BASE_URL + "/chat/completions"
-    assert seen["auth"] == "Bearer test-key"  # header, never logged
+    assert seen["auth"] == "Bearer test-key"
+
     payload = seen["payload"]
     assert payload["model"] == DEFAULT_MODEL
     assert payload["response_format"] == {"type": "json_object"}
     assert payload["temperature"] == 0.0
     assert payload["max_tokens"] == 1024
+
     roles = [m["role"] for m in payload["messages"]]
     assert set(roles) <= {"system", "user", "assistant"}
 
@@ -214,7 +239,11 @@ def test_message_roles_mapped():
     from langchain_core.messages import HumanMessage, SystemMessage
 
     model = mock_client(handler)
-    model.invoke([SystemMessage(content="sys"), HumanMessage(content="hi")])
+    model.invoke([
+        SystemMessage(content="sys"),
+        HumanMessage(content="hi"),
+    ])
+
     roles = [m["role"] for m in seen["payload"]["messages"]]
     assert roles == ["system", "user"]
 
@@ -225,7 +254,7 @@ def test_model_repr_and_params_hide_key():
     assert "super-secret-key" not in json.dumps(model._identifying_params)
 
 
-# -- error handling ------------------------------------------------------
+# -- error handling -------------------------------------------------------
 
 
 def test_401_auth_failure_no_retry():
@@ -233,15 +262,24 @@ def test_401_auth_failure_no_retry():
 
     def handler(request: httpx.Request) -> httpx.Response:
         calls.append(request)
-        return httpx.Response(401, json={
-            "error": {"type": "auth_error", "code": 16, "message": "bad key"}})
+        return httpx.Response(
+            401,
+            json={
+                "error": {
+                    "type": "auth_error",
+                    "code": 16,
+                    "message": "bad key",
+                }
+            },
+        )
 
     model = mock_client(handler, retries=3)
     with pytest.raises(SenseNovaAPIError) as exc_info:
         model.invoke("hello")
+
     assert exc_info.value.status_code == 401
     assert exc_info.value.retryable is False
-    assert len(calls) == 1  # fail fast — no retry storm
+    assert len(calls) == 1
 
 
 def test_429_quota_no_retry():
@@ -249,13 +287,20 @@ def test_429_quota_no_retry():
 
     def handler(request: httpx.Request) -> httpx.Response:
         calls.append(request)
-        return httpx.Response(429, json={
-            "error": {"type": "quota_exceeded_error",
-                      "message": "quota exceeded"}})
+        return httpx.Response(
+            429,
+            json={
+                "error": {
+                    "type": "quota_exceeded_error",
+                    "message": "quota exceeded",
+                }
+            },
+        )
 
     model = mock_client(handler, retries=3)
     with pytest.raises(SenseNovaAPIError) as exc_info:
         model.invoke("hello")
+
     assert exc_info.value.status_code == 429
     assert exc_info.value.retryable is False
     assert len(calls) == 1
@@ -266,15 +311,18 @@ def test_500_retries_then_raises():
 
     def handler(request: httpx.Request) -> httpx.Response:
         calls.append(request)
-        return httpx.Response(500, json={
-            "error": {"type": "internal_server_error"}})
+        return httpx.Response(
+            500,
+            json={"error": {"type": "internal_server_error"}},
+        )
 
     model = mock_client(handler, retries=1)
     with pytest.raises(SenseNovaAPIError) as exc_info:
         model.invoke("hello")
+
     assert exc_info.value.status_code == 500
     assert exc_info.value.retryable is True
-    assert len(calls) == 2  # 1 initial + 1 retry, then give up
+    assert len(calls) == 2
 
 
 def test_malformed_envelope_non_json():
@@ -312,21 +360,25 @@ def test_llm_unavailable_path_preserved(tmp_path):
     lc = make_lc(tmp_path, "test_sn_unavail")
 
     def factory():
-        raise LLMUnavailableError("sensenova LLM selected but "
-                                  "SENSENOVA_API_KEY is not set")
+        raise LLMUnavailableError(
+            "sensenova LLM selected but SENSENOVA_API_KEY is not set"
+        )
 
     svc = IncidentWorkflowService(lc, llm_factory=factory)
     decision = svc.analyze_event(make_event())
+
     assert decision.status == "llm_unavailable"
-    assert decision.severity is None  # never fabricated
+    assert decision.severity is None
 
 
 def test_graph_e2e_mocked_sensenova(tmp_path):
     """Full LangGraph run against a mocked SenseNova HTTP endpoint."""
     lc = make_lc(tmp_path, "test_sn_e2e")
     event = make_event()
-    chunk_ids = [d.metadata["chunk_id"]
-                 for d in lc.retrieve_for_event(event, top_k=3)]
+    chunk_ids = [
+        d.metadata["chunk_id"]
+        for d in lc.retrieve_for_event(event, top_k=3)
+    ]
     assert chunk_ids, "stub RAG must retrieve policies for the fixture event"
 
     analysis = dict(ANALYSIS)
@@ -344,7 +396,6 @@ def test_graph_e2e_mocked_sensenova(tmp_path):
     assert decision.summary.startswith("Person #2 entered")
     assert decision.cited_policy_chunk_ids == [chunk_ids[0]]
     assert decision.confidence == 0.9
-    # grounding: cited ids are a subset of what RAG actually retrieved
     assert set(decision.cited_policy_chunk_ids) <= set(chunk_ids)
 
 
@@ -352,11 +403,15 @@ def test_graph_e2e_mocked_malformed_output(tmp_path):
     """Malformed model JSON -> analysis_failed, never a fake decision."""
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=success_body("definitely not json"))
+        return httpx.Response(
+            200,
+            json=success_body("definitely not json"),
+        )
 
     lc = make_lc(tmp_path, "test_sn_malformed")
     model = mock_client(handler)
     svc = IncidentWorkflowService(lc, llm_factory=lambda: model)
     decision = svc.analyze_event(make_event())
+
     assert decision.status == "analysis_failed"
     assert decision.severity is None

@@ -1,12 +1,13 @@
-"""Frame sources — video file / webcam via OpenCV.
+
+"""Frame sources — video file, webcam, and HTTP streams via OpenCV.
 
 Clean lifecycle (open/read/close), frame iteration with index + timestamp,
-and measured source FPS. New sources (e.g. RTSP reconnect, image folder)
-implement the ``FrameSource`` interface and register in ``create_frame_source``.
+and measured source FPS.
 """
 from __future__ import annotations
 
 import abc
+import os
 import time
 from dataclasses import dataclass
 
@@ -54,59 +55,99 @@ class FrameSource(abc.ABC):
 
 
 class OpenCVFrameSource(FrameSource):
-    """File / webcam source backed by cv2.VideoCapture.
+    """File, webcam, or HTTP stream backed by cv2.VideoCapture.
 
-    ``loop=True`` (file sources only) rewinds at end-of-stream so a sample
-    video behaves like a continuous demo feed.
+    ``loop=True`` applies only to file sources.
     """
 
-    def __init__(self, source_type: str, source_url: str, loop: bool = False):
-        if source_type not in ("file", "webcam"):
-            raise FrameSourceError(f"unsupported source_type: {source_type}")
+    def __init__(
+        self,
+        source_type: str,
+        source_url: str,
+        loop: bool = False,
+    ):
+        if source_type not in ("file", "webcam", "http"):
+            raise FrameSourceError(
+                f"unsupported source_type: {source_type}"
+            )
+
         self.source_type = source_type
         self.loop = loop and source_type == "file"
-        # webcam device index comes through as a string, e.g. "0"
+
+        # Webcam sources use a numeric device index; other sources use URLs.
         self.target: str | int = (
             int(source_url) if source_type == "webcam" else source_url
         )
+
         self._cap: cv2.VideoCapture | None = None
         self._index = 0
         self._t0 = 0.0
         self._opened = False
         self.loops_completed = 0
+        self._next_frame_time = 0.0
+        self._frame_interval = 0.0
 
     def open(self) -> None:
         if self._opened:
             return
-        if self.source_type == "file":
-            import os
 
+        if self.source_type == "file":
             if not os.path.isfile(self.target):
-                raise FrameSourceError(f"video file not found: {self.target}")
+                raise FrameSourceError(
+                    f"video file not found: {self.target}"
+                )
+
         cap = cv2.VideoCapture(self.target)
+
         if not cap.isOpened():
+            cap.release()
             raise FrameSourceError(
                 f"could not open {self.source_type} source: {self.target}"
             )
+
         self._cap = cap
         self._index = 0
         self._t0 = time.time()
+
+        fps = float(cap.get(cv2.CAP_PROP_FPS) or 0.0)
+        self._frame_interval = (
+            1.0 / fps if self.source_type == "file" and fps > 0 else 0.0
+        )
+        self._next_frame_time = time.perf_counter()
         self._opened = True
 
     def read(self) -> Frame | None:
         if not self._opened or self._cap is None:
             raise FrameSourceError("source is not open")
+
+        # Throttle file playback to its reported FPS.
+        if self.source_type == "file" and self._frame_interval > 0:
+            now = time.perf_counter()
+            delay = self._next_frame_time - now
+
+            if delay > 0:
+                time.sleep(delay)
+
+            self._next_frame_time = max(
+                self._next_frame_time + self._frame_interval,
+                time.perf_counter(),
+            )
+
         ok, image = self._cap.read()
+
         if (not ok or image is None) and self.loop:
-            # rewind and try once more — continuous demo feed
             self._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
             ok, image = self._cap.read()
+
             if ok and image is not None:
                 self.loops_completed += 1
                 self._index = 0
                 self._t0 = time.time()
+                self._next_frame_time = time.perf_counter()
+
         if not ok or image is None:
-            return None  # end of file / stream
+            return None
+
         frame = Frame(
             image=image,
             index=self._index,
@@ -119,12 +160,14 @@ class OpenCVFrameSource(FrameSource):
         if self._cap is not None:
             self._cap.release()
             self._cap = None
+
         self._opened = False
 
     @property
     def source_fps(self) -> float:
         if self._cap is None:
             return 0.0
+
         return float(self._cap.get(cv2.CAP_PROP_FPS) or 0.0)
 
     @property
@@ -133,10 +176,16 @@ class OpenCVFrameSource(FrameSource):
 
 
 def create_frame_source(
-    source_type: str, source_url: str, loop: bool = False
+    source_type: str,
+    source_url: str,
+    loop: bool = False,
 ) -> FrameSource:
-    """Factory — add new source types here without touching the detector."""
-    if source_type in ("file", "webcam"):
-        return OpenCVFrameSource(source_type, source_url, loop=loop)
-    # Future: "rtsp" -> RtspFrameSource with reconnect logic
-    raise FrameSourceError(f"unsupported source_type: {source_type}")
+    """Create a supported video file, webcam, or HTTP stream source."""
+    if source_type in ("file", "webcam", "http"):
+        return OpenCVFrameSource(
+            source_type, source_url, loop=loop
+        )
+
+    raise FrameSourceError(
+        f"unsupported source_type: {source_type}"
+    )

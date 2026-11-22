@@ -2,7 +2,7 @@
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci --legacy-peer-deps --fetch-retries=10 --fetch-timeout=300000
 
 FROM node:20-alpine AS builder
 WORKDIR /app

@@ -199,6 +199,18 @@ def validate_analysis(state: dict, ctx: NodeContext) -> dict:
             "model cited chunk IDs that were not retrieved: "
             f"{sorted(set(analysis.cited_policy_chunk_ids) - set(retrieved))}",
         )
+        event = state.get("event") or {}
+    if (
+        event.get("event_type") == "zone_enter"
+        and _has_no_access_grant(event)
+        and "restricted-area#severity-guidance" in retrieved
+    ):
+        analysis.severity = "HIGH"
+        analysis.reasoning = (
+            analysis.reasoning
+            + " Policy enforcement: explicit absence of an access grant "
+            "for a zone entry requires HIGH severity."
+        )
     return _timed(state, "validate_analysis", t0,
                   {"analysis": analysis.model_dump(mode="json")})
 
@@ -253,7 +265,10 @@ def build_decision(state: dict, ctx: NodeContext) -> dict:
 
 
 # -- helpers ---------------------------------------------------------------
-
+def _has_no_access_grant(event: dict) -> bool:
+    """Return True only when the event explicitly confirms no access grant."""
+    metadata = event.get("metadata") or {}
+    return metadata.get("access_granted") is False
 
 def _extract_json(text: str) -> str:
     start = text.find("{")
