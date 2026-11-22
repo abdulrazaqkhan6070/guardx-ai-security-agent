@@ -199,7 +199,7 @@ def validate_analysis(state: dict, ctx: NodeContext) -> dict:
             "model cited chunk IDs that were not retrieved: "
             f"{sorted(set(analysis.cited_policy_chunk_ids) - set(retrieved))}",
         )
-        event = state.get("event") or {}
+    event = state.get("event") or {}
     if (
         event.get("event_type") == "zone_enter"
         and _has_no_access_grant(event)
